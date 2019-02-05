@@ -23,12 +23,12 @@
 #include "QueryResults.h"
 #include "BowVector.h"
 
-#include "DUtils.h"
-#include "DUtilsCV.h"
-#include "DVision.h"
+//#include <DUtils/DUtils.h>
+//#include <DUtilsCV/DUtilsCV.h>
+//#include <DVision/DVision.h>
 
 using namespace std;
-using namespace DUtils;
+//using namespace DUtils;
 using namespace DBoW2;
 
 namespace DLoopDetector {
@@ -135,11 +135,9 @@ public:
     int max_distance_between_queries; 
   
     // These are for the RANSAC to compute the F
-    
+   
     /// Min number of inliers when computing a fundamental matrix
-    int min_Fpoints;
-    /// Max number of iterations of RANSAC
-    int max_ransac_iterations;
+    int min_Fpoints; 
     /// Success probability of RANSAC
     double ransac_probability;
     /// Max reprojection error of fundamental matrices
@@ -229,7 +227,7 @@ public:
    * Retrieves a reference to the vocabulary used by the loop detector
    * @return const reference to vocabulary
    */
-  inline const TemplatedVocabulary<TDescriptor, F>& getVocabulary() const;
+  inline const TemplatedVocabulary<TDescriptor, F>* getVocabulary() const;
   
   /**
    * Sets the database to use. The contents of the database and the detector
@@ -498,6 +496,20 @@ protected:
     const vector<unsigned int> &i_A, const vector<TDescriptor> &B,
     const vector<unsigned int> &i_B,
     vector<unsigned int> &i_match_A, vector<unsigned int> &i_match_B) const;
+  
+  /**
+   * Checks if a consistent fundamental matrix can be computed from the given
+   * points. It is not computed, though.
+   * @param P1 2xN, 3xN, Nx2, Nx3, correspondences of image 1 in image coordinates
+   * @param P2 2xN, 3xN, Nx2, Nx3, correspondences of image 2 in image coordinates
+   * @param reprojection_error max reprojection error for getting inliers
+   * @param probability RANSAC success probability
+   * @return true iff some fundamental matrix is found
+   */
+  bool checkFundamentalMat(const cv::Mat &P1, const cv::Mat &P2,
+    double reprojection_error, double probability) const;
+
+
 
 protected:
 
@@ -521,7 +533,6 @@ protected:
   Parameters m_params;
   
   /// To compute the fundamental matrix
-  DVision::FSolver m_fsolver;
   
 };
 
@@ -560,7 +571,6 @@ void TemplatedLoopDetector<TDescriptor,F>::Parameters::set(float f)
   max_distance_between_queries = 2 * f; 
 
   min_Fpoints = 12;
-  max_ransac_iterations = 500;
   ransac_probability = 0.99;
   max_reprojection_error = 2.0;
   
@@ -586,7 +596,6 @@ TemplatedLoopDetector<TDescriptor,F>::TemplatedLoopDetector
   m_database = new TemplatedDatabase<TDescriptor, F>(voc, 
     params.geom_check == GEOM_DI, params.di_levels);
   
-  m_fsolver.setImageSize(params.image_cols, params.image_rows);
 }
 
 // --------------------------------------------------------------------------
@@ -610,7 +619,6 @@ TemplatedLoopDetector<TDescriptor, F>::TemplatedLoopDetector
   m_database = new TemplatedDatabase<TDescriptor, F>(db.getVocabulary(),
     params.geom_check == GEOM_DI, params.di_levels);
   
-  m_fsolver.setImageSize(params.image_cols, params.image_rows);
 }
 
 // --------------------------------------------------------------------------
@@ -624,7 +632,6 @@ TemplatedLoopDetector<TDescriptor, F>::TemplatedLoopDetector
   m_database = new T(db);
   m_database->clear();
   
-  m_fsolver.setImageSize(params.image_cols, params.image_rows);
 }
 
 // --------------------------------------------------------------------------
@@ -633,7 +640,8 @@ template<class TDescriptor, class F>
 template<class T>
 void TemplatedLoopDetector<TDescriptor, F>::setDatabase(const T &db)
 {
-  delete m_database;
+  if(m_database!=nullptr)
+    delete m_database;
   m_database = new T(db);
   clear();
 }
@@ -685,7 +693,7 @@ TemplatedLoopDetector<TDescriptor, F>::getDatabase() const
 // --------------------------------------------------------------------------
 
 template<class TDescriptor, class F>
-inline const TemplatedVocabulary<TDescriptor, F>& 
+inline const TemplatedVocabulary<TDescriptor, F>* 
 TemplatedLoopDetector<TDescriptor, F>::getVocabulary() const
 {
   return m_database->getVocabulary();
@@ -699,6 +707,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
   const std::vector<TDescriptor> &descriptors,
   DetectionResult &match)
 {
+  //std::cout << "Loop detection started!" <<std::endl << std::flush; 
   EntryId entry_id = m_database->size();
   match.query = entry_id;
   
@@ -711,11 +720,13 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
   else
     m_database->getVocabulary()->transform(descriptors, bowvec);
 
+  //std::cout << "Transformation complete!" <<std::endl << std::flush; 
   if((int)entry_id <= m_params.dislocal)
   {
     // only add the entry to the database and finish
-    m_database->add(bowvec, featvec);
+    //m_database->add(bowvec, featvec);
     match.status = CLOSE_MATCHES_ONLY;
+  //std::cout << "added to database!" <<std::endl << std::flush; 
   }
   else
   {
@@ -724,8 +735,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
     QueryResults qret;
     m_database->query(bowvec, qret, m_params.max_db_results, max_id);
 
-    // update database
-    m_database->add(bowvec, featvec); // returns entry_id
+
     
     if(!qret.empty())
     {
@@ -837,6 +847,9 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
       match.status = NO_DB_RESULTS;
     }
   }
+  // update database
+  if(!match.detection())
+    m_database->add(bowvec, featvec); // returns entry_id
 
   // update record
   // m_image_keys and m_image_descriptors have the same length
@@ -1078,9 +1091,9 @@ bool TemplatedLoopDetector<TDescriptor, F>::isGeometricallyConsistent_DI(
     cv::Mat oldMat(old_points.size(), 2, CV_32F, &old_points[0]);
     cv::Mat curMat(cur_points.size(), 2, CV_32F, &cur_points[0]);
     
-    return m_fsolver.checkFundamentalMat(oldMat, curMat, 
-      m_params.max_reprojection_error, m_params.min_Fpoints,
-      m_params.ransac_probability, m_params.max_ransac_iterations);
+    return checkFundamentalMat(oldMat, curMat, 
+      m_params.max_reprojection_error,
+      m_params.ransac_probability);
   }
   
   return false;
@@ -1138,9 +1151,9 @@ isGeometricallyConsistent_Exhaustive(
     cv::Mat oldMat(old_points.size(), 2, CV_32F, &old_points[0]);
     cv::Mat curMat(cur_points.size(), 2, CV_32F, &cur_points[0]);
     
-    return m_fsolver.checkFundamentalMat(oldMat, curMat, 
-      m_params.max_reprojection_error, m_params.min_Fpoints,
-      m_params.ransac_probability, m_params.max_ransac_iterations);
+    return checkFundamentalMat(oldMat, curMat, 
+      m_params.max_reprojection_error,
+      m_params.ransac_probability);
   }
   
   return false;
@@ -1242,9 +1255,9 @@ bool TemplatedLoopDetector<TDescriptor, F>::isGeometricallyConsistent_Flann
     cv::Mat oldMat(old_points.size(), 2, CV_32F, &old_points[0]);
     cv::Mat curMat(cur_points.size(), 2, CV_32F, &cur_points[0]);
     
-    return m_fsolver.checkFundamentalMat(oldMat, curMat, 
-      m_params.max_reprojection_error, m_params.min_Fpoints,
-      m_params.ransac_probability, m_params.max_ransac_iterations);
+    return checkFundamentalMat(oldMat, curMat, 
+      m_params.max_reprojection_error,
+      m_params.ransac_probability);
   }
   
   return false;
@@ -1338,6 +1351,18 @@ void TemplatedLoopDetector<TDescriptor, F>::removeLowScores(QueryResults &q,
 }
 
 // --------------------------------------------------------------------------
+
+template<class TDescriptor, class F>
+bool TemplatedLoopDetector<TDescriptor, F>::checkFundamentalMat(
+  const cv::Mat &P1, const cv::Mat &P2,
+  double reprojection_error, double probability) const
+{
+  cv::Mat fundMat = cv::findFundamentalMat(
+             P1,P2,CV_FM_RANSAC,reprojection_error,probability);
+  return !(fundMat.empty());
+}
+// --------------------------------------------------------------------------
+
 
 } // namespace DLoopDetector
 

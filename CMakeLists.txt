@@ -58,7 +58,7 @@ macro(GetDependency name other_dependency)
 endmacro(GetDependency)
 
 GetDependency(DLib "")
-GetDependency(DBoW2 DLib)
+GetDependency(DBoW2 "")
 add_custom_target(Dependencies ${CMAKE_COMMAND} ${CMAKE_SOURCE_DIR} DEPENDS DBoW2_dep DLib_dep)
 
 include_directories(include/DLoopDetector/)
@@ -96,4 +96,4 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/DLoopDetectorConfig.cmake"
   DESTINATION ${CMAKE_INSTALL_PREFIX}/include/${PROJECT_NAME})
 install(FILES "${PROJECT_BINARY_DIR}/DLoopDetectorConfig.cmake" 
   DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/cmake/DLoopDetector/)
-install(DIRECTORY ${DEPENDENCY_INSTALL_DIR}/ DESTINATION ${CMAKE_INSTALL_PREFIX} OPTIONAL)
+#install(DIRECTORY ${DEPENDENCY_INSTALL_DIR}/ DESTINATION ${CMAKE_INSTALL_PREFIX} OPTIONAL)

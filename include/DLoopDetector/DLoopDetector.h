@@ -54,8 +54,13 @@ namespace DLoopDetector
 #include "TemplatedLoopDetector.h"
 #include "FORB.h"
 #include "FBrief.h"
+#include "FBRISK.h"
 
-/// SURF64 Loop Detector
+/// BRISK Loop Detector
+typedef DLoopDetector::TemplatedLoopDetector
+  <FBRISK::TDescriptor, FBRISK> BRISKLoopDetector;
+
+/// ORB Loop Detector
 typedef DLoopDetector::TemplatedLoopDetector
   <FORB::TDescriptor, FORB> OrbLoopDetector;
 
