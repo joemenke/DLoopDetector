@@ -57,16 +57,16 @@ macro(GetDependency name other_dependency)
   endif(${${name}_FOUND})
 endmacro(GetDependency)
 
-GetDependency(DLib "")
+#GetDependency(DLib "")
 GetDependency(DBoW2 "")
-add_custom_target(Dependencies ${CMAKE_COMMAND} ${CMAKE_SOURCE_DIR} DEPENDS DBoW2_dep DLib_dep)
+add_custom_target(Dependencies ${CMAKE_COMMAND} ${CMAKE_SOURCE_DIR} DEPENDS DBoW2_dep)
 
 include_directories(include/DLoopDetector/)
 
 if(BUILD_DemoBRIEF)
   add_executable(demo_brief demo/demo_brief.cpp)
-  add_dependencies(demo_brief DLib_dep DBoW2_dep)
-  target_link_libraries(demo_brief ${OpenCV_LIBS} ${DLib_LIBS} ${DBoW2_LIBS})
+  add_dependencies(demo_brief DBoW2_dep)
+  target_link_libraries(demo_brief ${OpenCV_LIBS} ${DBoW2_LIBS})
 endif(BUILD_DemoBRIEF)
 
 #if(BUILD_DemoSURF)
