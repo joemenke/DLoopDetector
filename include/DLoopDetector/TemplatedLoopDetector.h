@@ -17,7 +17,7 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
-
+#include <iostream>
 #include "TemplatedVocabulary.h"
 #include "TemplatedDatabase.h"
 #include "QueryResults.h"
@@ -749,6 +749,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
       if(m_params.use_nss)
       {
         ns_factor = m_database->getVocabulary()->score(bowvec, m_last_bowvec);
+        
       }
       
       if(!m_params.use_nss || ns_factor >= m_params.min_nss_factor)
@@ -838,6 +839,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
         } // if !qret empty after removing low scores
         else
         {
+
           match.status = LOW_SCORES;
         }
       } // if (ns_factor > min normal score)
@@ -922,6 +924,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop_query(
       if(m_params.use_nss)
       {
         ns_factor = m_database->getVocabulary()->score(bowvec, m_last_bowvec);
+        cout<<"ns_factor_query"<<ns_factor<<endl;
       }
       
       if(!m_params.use_nss || ns_factor >= m_params.min_nss_factor)
