@@ -922,13 +922,13 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop_query(
       double ns_factor = 1.0;
       // remove the dependency on m_last_bowvec which detect_loop won't update
       const auto use_nss = false;
-      if(use_nss)
+      if(m_params.use_nss)
       {
         ns_factor = m_database->getVocabulary()->score(bowvec, m_last_bowvec);
         cout<<"ns_factor_query"<<ns_factor<<endl;
       }
       
-      if(!use_nss || ns_factor >= m_params.min_nss_factor)
+      if(!m_params.use_nss || ns_factor >= m_params.min_nss_factor)
       {
         // scores in qret must be divided by ns_factor to obtain the
         // normalized similarity score, but we can
