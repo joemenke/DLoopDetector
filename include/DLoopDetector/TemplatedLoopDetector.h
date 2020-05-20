@@ -17,7 +17,7 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
-
+#include <iostream>
 #include "TemplatedVocabulary.h"
 #include "TemplatedDatabase.h"
 #include "QueryResults.h"
@@ -260,6 +260,10 @@ public:
    * @return true iff there was match
    */
   bool detectLoop(const std::vector<cv::KeyPoint> &keys, 
+    const std::vector<TDescriptor> &descriptors,
+    DetectionResult &match);
+    //modification of the above function to only query for detected loop without updating features and descriptors
+  bool detectLoop_query(const std::vector<cv::KeyPoint> &keys, 
     const std::vector<TDescriptor> &descriptors,
     DetectionResult &match);
 
@@ -745,6 +749,183 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
       if(m_params.use_nss)
       {
         ns_factor = m_database->getVocabulary()->score(bowvec, m_last_bowvec);
+        
+      }
+      
+      if(!m_params.use_nss || ns_factor >= m_params.min_nss_factor)
+      {
+        // scores in qret must be divided by ns_factor to obtain the
+        // normalized similarity score, but we can
+        // speed this up by moving ns_factor to alpha's
+        
+        // remove those scores whose nss is lower than alpha
+        // (ret is sorted in descending score order now)
+        removeLowScores(qret, m_params.alpha * ns_factor);
+        
+        if(!qret.empty())
+        {
+          // the best candidate is the one with highest score by now
+          match.match = qret[0].Id;
+          
+          // compute islands
+          vector<tIsland> islands;
+          computeIslands(qret, islands); 
+          // this modifies qret and changes the score order
+          
+          // get best island
+          if(!islands.empty())
+          {
+            const tIsland& island = 
+              *std::max_element(islands.begin(), islands.end());
+            
+            // check temporal consistency of this island
+            updateTemporalWindow(island, entry_id);
+            
+            // get the best candidate (maybe match)
+            match.match = island.best_entry;
+            
+            if(getConsistentEntries() > m_params.k)
+            {
+              // candidate loop detected
+              // check geometry
+              bool detection;
+
+              if(m_params.geom_check == GEOM_DI)
+              {
+                // all the DI stuff is implicit in the database
+                detection = isGeometricallyConsistent_DI(island.best_entry, 
+                  keys, descriptors, featvec);
+              }
+              else if(m_params.geom_check == GEOM_FLANN)
+              {
+                cv::FlannBasedMatcher flann_structure;
+                getFlannStructure(descriptors, flann_structure);
+                            
+                detection = isGeometricallyConsistent_Flann(island.best_entry, 
+                  keys, descriptors, flann_structure);
+              }
+              else if(m_params.geom_check == GEOM_EXHAUSTIVE)
+              { 
+                detection = isGeometricallyConsistent_Exhaustive(
+                  m_image_keys[island.best_entry], 
+                  m_image_descriptors[island.best_entry],
+                  keys, descriptors);            
+              }
+              else // GEOM_NONE, accept the match
+              {
+                detection = true;
+              }
+              
+              if(detection)
+              {
+                match.status = LOOP_DETECTED;
+              }
+              else
+              {
+                match.status = NO_GEOMETRICAL_CONSISTENCY;
+              }
+              
+            } // if enough temporal matches
+            else
+            {
+              match.status = NO_TEMPORAL_CONSISTENCY;
+            }
+            
+          } // if there is some island
+          else
+          {
+            match.status = NO_GROUPS;
+          }
+        } // if !qret empty after removing low scores
+        else
+        {
+
+          match.status = LOW_SCORES;
+        }
+      } // if (ns_factor > min normal score)
+      else
+      {
+        match.status = LOW_NSS_FACTOR;
+      }
+    } // if(!qret.empty())
+    else
+    {
+      match.status = NO_DB_RESULTS;
+    }
+  }
+  // update database
+  if(!match.detection())
+    m_database->add(bowvec, featvec); // returns entry_id
+
+  // update record
+  // m_image_keys and m_image_descriptors have the same length
+  if(m_image_keys.size() == entry_id)
+  {
+    m_image_keys.push_back(keys);
+    m_image_descriptors.push_back(descriptors);
+  }
+  else
+  {
+    m_image_keys[entry_id] = keys;
+    m_image_descriptors[entry_id] = descriptors;
+  }
+  
+  // store this bowvec if we are going to use it in next iteratons
+  if(m_params.use_nss && (int)entry_id + 1 > m_params.dislocal)
+  {
+    m_last_bowvec = bowvec;
+  }
+
+  return match.detection();
+}
+
+// --------------------------------------------------------------------------
+template<class TDescriptor, class F>
+bool TemplatedLoopDetector<TDescriptor, F>::detectLoop_query(
+  const std::vector<cv::KeyPoint> &keys, 
+  const std::vector<TDescriptor> &descriptors,
+  DetectionResult &match)
+{
+  //std::cout << "Loop detection started!" <<std::endl << std::flush; 
+  EntryId entry_id = m_database->size();
+  match.query = entry_id;
+  
+  BowVector bowvec;
+  FeatureVector featvec;
+  
+  if(m_params.geom_check == GEOM_DI)
+    m_database->getVocabulary()->transform(descriptors, bowvec, featvec,
+      m_params.di_levels);
+  else
+    m_database->getVocabulary()->transform(descriptors, bowvec);
+
+  //std::cout << "Transformation complete!" <<std::endl << std::flush; 
+  if((int)entry_id <= m_params.dislocal)
+  {
+    // only add the entry to the database and finish
+    //m_database->add(bowvec, featvec);
+    match.status = CLOSE_MATCHES_ONLY;
+  //std::cout << "added to database!" <<std::endl << std::flush; 
+  }
+  else
+  {
+    int max_id = (int)entry_id - m_params.dislocal;
+    
+    QueryResults qret;
+    m_database->query(bowvec, qret, m_params.max_db_results, max_id);
+
+
+    
+    if(!qret.empty())
+    {
+      // factor to compute normalized similarity score, if necessary
+      double ns_factor = 1.0;
+      // remove the dependency on m_last_bowvec which detect_loop won't update
+      const auto use_nss = false;
+      if(m_params.use_nss)
+      {
+        ns_factor = m_database->getVocabulary()->score(bowvec, m_last_bowvec);
+        cout<<"ns_factor_query"<<ns_factor<<endl;
       }
       
       if(!m_params.use_nss || ns_factor >= m_params.min_nss_factor)
@@ -847,34 +1028,10 @@ bool TemplatedLoopDetector<TDescriptor, F>::detectLoop(
       match.status = NO_DB_RESULTS;
     }
   }
-  // update database
-  if(!match.detection())
-    m_database->add(bowvec, featvec); // returns entry_id
-
-  // update record
-  // m_image_keys and m_image_descriptors have the same length
-  if(m_image_keys.size() == entry_id)
-  {
-    m_image_keys.push_back(keys);
-    m_image_descriptors.push_back(descriptors);
-  }
-  else
-  {
-    m_image_keys[entry_id] = keys;
-    m_image_descriptors[entry_id] = descriptors;
-  }
-  
-  // store this bowvec if we are going to use it in next iteratons
-  if(m_params.use_nss && (int)entry_id + 1 > m_params.dislocal)
-  {
-    m_last_bowvec = bowvec;
-  }
-
   return match.detection();
 }
 
 // --------------------------------------------------------------------------
-
 template<class TDescriptor, class F>
 inline void TemplatedLoopDetector<TDescriptor, F>::clear()
 {
