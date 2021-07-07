@@ -1515,7 +1515,7 @@ bool TemplatedLoopDetector<TDescriptor, F>::checkFundamentalMat(
   double reprojection_error, double probability) const
 {
   cv::Mat fundMat = cv::findFundamentalMat(
-             P1,P2,CV_FM_RANSAC,reprojection_error,probability);
+             P1,P2,cv::FM_RANSAC,reprojection_error,probability);
   return !(fundMat.empty());
 }
 // --------------------------------------------------------------------------
